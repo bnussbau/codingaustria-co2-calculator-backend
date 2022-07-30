@@ -79,7 +79,7 @@ class Co2Controller extends AbstractController
         ]);
     }
 
-    public function getDistance(HttpClientInterface $client, string $origin, array $waypoints): float
+    private function getDistance(HttpClientInterface $client, string $origin, array $waypoints): float
     {
         $params['origin'] = $params['destination'] = $origin;
         $params['mode'] = 'driving';
