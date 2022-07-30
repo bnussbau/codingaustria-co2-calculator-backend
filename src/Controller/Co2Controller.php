@@ -14,6 +14,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 class Co2Controller extends AbstractController
 {
     const API_URL = 'https://maps.googleapis.com/maps/api/directions/json';
+    const DELIVERY_UNBUNDLED_EMISSION_OVERALL = 600;
+    const DELIVERY_BUNDLED_EMISSION_OVERALL = 900;
+    const DELIVERY_PER_PEDES_EMISSION = 0; // sing: i can walk 500 miles
     const CAR_CO2_EMISSION_PER_KM = 123;
     const CUSTOMER_PICKUP_FACTOR = 2;
     const HUB_ADDRESS = [
@@ -81,8 +84,10 @@ class Co2Controller extends AbstractController
 
         return $this->json([
             'co2GramsPickup' => $distanceKmPickup * self::CUSTOMER_PICKUP_FACTOR * self::CAR_CO2_EMISSION_PER_KM,
-            'co2GramsDelivery' => $distanceKmDeliveryFromHub * self::CAR_CO2_EMISSION_PER_KM,
-            'co2GramsBundledDelivery' => 1,// todo: overall distance of the whole delivery route divided by count of stops times electric delivery car emission
+            'co2GramsPickupPerPedes' => self::DELIVERY_PER_PEDES_EMISSION,
+            'co2GramsDeliveryOptimized' => $distanceKmDeliveryFromHub * self::CAR_CO2_EMISSION_PER_KM,
+            'co2GramsDeliveryUnbundled' => self::DELIVERY_UNBUNDLED_EMISSION_OVERALL,
+            'co2GramsDeliveryBundled' => self::DELIVERY_BUNDLED_EMISSION_OVERALL
         ]);
     }
 
