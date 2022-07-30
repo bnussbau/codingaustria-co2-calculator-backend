@@ -2,10 +2,15 @@
 
 namespace App\Controller;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\ORM\Query\Expr\From;
+use Doctrine\ORM\Query\Expr\Select;
+use PDO;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
+use Doctrine\Persistence\ManagerRegistry;
 
 class Co2Controller extends AbstractController
 {
@@ -29,16 +34,20 @@ class Co2Controller extends AbstractController
     }
 
     #[Route('/api/merchant/co2', name: 'app_co2_merchant')]
-    public function co2Merchant(Request $request): JsonResponse
+    public function co2Merchant(Request $request, Connection $conn): JsonResponse
     {
-        $merchantID = $request->query->get('merchantId');
-        $em = $this->container->get('doctrine.orm.entity_manager');
-        $qb = $em->createQueryBuilder();
-        $qb->add('select', new Expr\Select(array('order_id')))
-            ->add('from', new Expr\From('merchant_order', 'merchant_order'));
-        $query = $qb->getQuery();
-        $result = $query->getResult();
-        dd($result);
+        //$entityManager = $doctrine->getManager();
 
+        $merchantId = $request->query->get('merchantId');
+
+
+        $stmt = $conn->prepare("SELECT count(*) FROM merchant_order where merchant_id = 0x".$merchantId);
+
+        $result = $stmt->executeQuery();
+        $countOrders = $result->fetchAssociative();
+
+        return $this->json([
+            'co2Savings' => array_values($countOrders)[0]*600
+        ]);
     }
 }
