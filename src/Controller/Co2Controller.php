@@ -69,7 +69,7 @@ class Co2Controller extends AbstractController
         $options = [];
 
         // Parameters for Auth
-        $defaultParams = ['key' => 'AIzaSyATrcd4R8s-dKkuZLRqc9aLUNnsQihxgC8'];
+        $defaultParams = ['key' => $this->getParameter('api_key')];
 
         // Query
         $options['query'] = array_merge($defaultParams, $params);
