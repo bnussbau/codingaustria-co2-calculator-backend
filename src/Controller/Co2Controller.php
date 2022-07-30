@@ -3,7 +3,6 @@
 namespace App\Controller;
 
 use Doctrine\DBAL\Connection;
-use PDO;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
