@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace App\Controller;
 
@@ -12,7 +13,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class Co2Controller extends AbstractController
 {
-    const CUSTOMER_ROUNDTRIP = 123*2;
+    const API_URL = 'https://maps.googleapis.com/maps/api/directions/json';
+    const CAR_CO2_EMISSION_PER_KM = 123;
+    const CUSTOMER_PICKUP_FACTOR = 2;
 
     #[Route('/api/co2', name: 'app_co2')]
     public function index(Request $request): JsonResponse
@@ -23,7 +26,6 @@ class Co2Controller extends AbstractController
         $merchantId = $request->query->get('merchantId');
         $datePreference = $request->query->get('datePreference');
 
-        //dd($request->query);
         return $this->json([
             'street' => $street,
             'zip' => $zip,
@@ -36,28 +38,18 @@ class Co2Controller extends AbstractController
     #[Route('/api/merchant/co2', name: 'app_co2_merchant')]
     public function co2Merchant(Request $request, Connection $conn): JsonResponse
     {
-        $merchantId = $request->query->get('merchantId');
-
-        $stmt = $conn->prepare("SELECT count(*) FROM merchant_order where merchant_id = 0x".$merchantId);
-
-        $result = $stmt->executeQuery();
-        $countOrders = $result->fetchAssociative();
+        $orders = $this->getOrdersByMerchant($conn, $request->query->get('merchantId'));
 
         return $this->json([
-            'co2Savings' => array_values($countOrders)[0]*600
+            'co2Savings' => array_values($orders)[0] * 600
         ]);
     }
 
     #[Route('/api/merchant/address', name: 'app_co2_merchant_address')]
     public function co2MerchantAddress(Request $request, Connection $conn): JsonResponse
     {
-        $merchantId = $request->query->get('merchantId');
+        $merchantAddress = $this->getMerchantAddress($conn, $request->query->get('merchantId'));
 
-
-        $stmt = $conn->prepare("SELECT street, zip, city FROM merchant where id = 0x".$merchantId);
-
-        $result = $stmt->executeQuery();
-        $merchantAddress = $result->fetchAssociative();
         return $this->json([
             'address' => array_values($merchantAddress)
         ])->setEncodingOptions(JSON_UNESCAPED_UNICODE);
@@ -69,99 +61,78 @@ class Co2Controller extends AbstractController
         $street = $request->query->get('street');
         $zip = $request->query->get('zip');
         $city = $request->query->get('city');
-        $merchantId = $request->query->get('merchantId');
         $datePreference = $request->query->get('datePreference');
+        $HUB_ADDRESS = "Mühlgasse+93,2380,Perchtoldsdorf";
 
-        $HUB_ADDRESS= "Mühlgasse+93,2380,Perchtoldsdorf";
+        $merchantAddress = $this->getMerchantAddress($conn, $request->query->get('merchantId'));
+        $waypoints = [
+            $this->encodeAddressForGoogleMaps([
+                'street' => $street,
+                'zip' => $zip,
+                'city' => $city,
+            ])
+        ];
+        $distanceKm = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints);
 
-        $stmt = $conn->prepare("SELECT street, zip, city FROM merchant where id = 0x".$merchantId);
+        return $this->json([
+            'co2GramsPickup' => $distanceKm * self::CUSTOMER_PICKUP_FACTOR * self::CAR_CO2_EMISSION_PER_KM
+        ]);
+    }
 
+    public function getDistance(HttpClientInterface $client, string $origin, array $waypoints): float
+    {
+        $params['origin'] = $params['destination'] = $origin;
+        $params['mode'] = 'driving';
+        $params['waypoints'] = sprintf('optimize:true|%s', join('|', $waypoints));
+
+        $defaultParams = ['key' => $this->getParameter('api_key')];
+        $options['query'] = array_merge($defaultParams, $params);
+
+        $response = $client->request(
+            'GET',
+            'https://maps.googleapis.com/maps/api/directions/json',
+            $options
+        );
+
+        $json = json_decode($response->getContent(), true);
+        $distanceMeters = $json['routes'][0]['legs'][0]['distance']['value'];
+        $distanceKm = $distanceMeters / 1000;
+
+        if (Response::HTTP_OK !== $response->getStatusCode()) {
+            throw new \Exception('Not possible to query directions api');
+        }
+
+        return $distanceKm;
+    }
+
+    private function getOrdersByMerchant(Connection $conn, string $merchantId): array
+    {
+        $stmt = $conn->prepare("SELECT count(*) FROM merchant_order where merchant_id = 0x" . $merchantId);
+        $result = $stmt->executeQuery();
+        $countOrders = $result->fetchAssociative();
+
+        if (!$countOrders) {
+            return [];
+        }
+
+        return $countOrders;
+    }
+
+    private function getMerchantAddress(Connection $conn, float|bool|int|string|null $merchantId): array
+    {
+        $stmt = $conn->prepare("SELECT street, zip, city FROM merchant where id = 0x" . $merchantId);
         $result = $stmt->executeQuery();
         $merchantAddress = $result->fetchAssociative();
 
-
-        $params['origin'] = $merchantAddress['street'] . ", " . $merchantAddress['zip'] . " " .  $merchantAddress['city'];
-        $params['destination'] = $merchantAddress['street'] . ", " . $merchantAddress['zip'] . " " .  $merchantAddress['city'];
-        $waypoints = [
-            $street . ", " . $zip . " " .  $city
-        ];
-
-        //dd($params['origin'] , $params['destination'] , $waypoints);
-        $params['mode'] = 'driving';
-        $params['waypoints'] = sprintf('optimize:true|%s', join('|', $waypoints));
-        $options = [];
-
-        // Parameters for Auth
-        $defaultParams = ['key' => $this->getParameter('api_key')];
-
-        // Query
-        $options['query'] = array_merge($defaultParams, $params);
-
-        $response = $client->request(
-            'GET',
-            'https://maps.googleapis.com/maps/api/directions/json',
-            $options
-        );
-
-        $json = json_decode($response->getContent(), true);
-        $distanceMeters = $json['routes'][0]['legs'][0]['distance']['value'];
-        $distanceKm = $distanceMeters / 1000;
-
-
-//        dd($distanceKm * 123 * 2);
-
-//        dd($request->query);
-        return $this->json([
-            'co2GramsPickup' => $distanceKm * self::CUSTOMER_ROUNDTRIP
-        ]);
-
-
-
-    }
-
-
-    #[Route('/api/test', name: 'test')]
-    public function test(Request $request, HttpClientInterface $client): JsonResponse
-    {
-        $valid = [
-            'Karlsplatz, Wien',
-            'Südtiroler Pl., 1040 Wien',
-            'Erdbergstraße 131, 1030 Wien',
-            'Litfaßstraße 13-7, 1030 Wien',
-            'Salzburg Hbf, Südtiroler Pl. 1, 5020 Salzburg',
-        ];
-       return $this->getDistance($client, 'Flughafen Wien', $valid);
-    }
-
-    public function getDistance(HttpClientInterface $client, string $origin, array $waypoints): JsonResponse
-    {
-        $params['origin'] = $origin;
-        $params['destination'] = $origin;
-        $params['mode'] = 'driving';
-        $params['waypoints'] = sprintf('optimize:true|%s', join('|', $waypoints));
-        $options = [];
-
-        // Parameters for Auth
-        $defaultParams = ['key' => $this->getParameter('api_key')];
-
-        // Query
-        $options['query'] = array_merge($defaultParams, $params);
-
-        $response = $client->request(
-            'GET',
-            'https://maps.googleapis.com/maps/api/directions/json',
-            $options
-        );
-
-        $json = json_decode($response->getContent(), true);
-        $distanceMeters = $json['routes'][0]['legs'][0]['distance']['value'];
-        $distanceKm = $distanceMeters / 1000;
-
-        // Error Handler
-        if (Response::HTTP_OK !== $response->getStatusCode()) {
-            return new JsonResponse(['error' => $response->getContent()], Response::HTTP_BAD_REQUEST);
+        if(!$merchantAddress) {
+            return [];
         }
 
-        return new JsonResponse(['overall_distance' => $distanceKm]);
+        return $merchantAddress;
+    }
+
+    private function encodeAddressForGoogleMaps(array $merchantAddress): string
+    {
+        return sprintf('%s, %s %s', $merchantAddress['street'], $merchantAddress['zip'], $merchantAddress['city']);
     }
 }
