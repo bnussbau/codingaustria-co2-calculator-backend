@@ -3,14 +3,13 @@
 namespace App\Controller;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\ORM\Query\Expr\From;
-use Doctrine\ORM\Query\Expr\Select;
 use PDO;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
-use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class Co2Controller extends AbstractController
 {
@@ -31,17 +30,12 @@ class Co2Controller extends AbstractController
             'merchantId' => $merchantId,
             'datePreference' => $datePreference
         ]);
-
-
     }
 
     #[Route('/api/merchant/co2', name: 'app_co2_merchant')]
     public function co2Merchant(Request $request, Connection $conn): JsonResponse
     {
-        //$entityManager = $doctrine->getManager();
-
         $merchantId = $request->query->get('merchantId');
-
 
         $stmt = $conn->prepare("SELECT count(*) FROM merchant_order where merchant_id = 0x".$merchantId);
 
@@ -53,18 +47,48 @@ class Co2Controller extends AbstractController
         ]);
     }
 
-    #[Route('/api/merchant/address', name: 'app_co2_merchant_address')]
-    public function co2MerchantAddress(Request $request, Connection $conn): JsonResponse
+    #[Route('/api/test', name: 'test')]
+    public function test(Request $request, HttpClientInterface $client): JsonResponse
     {
-        $merchantId = $request->query->get('merchantId');
+        $valid = [
+            'Karlsplatz, Wien',
+            'Südtiroler Pl., 1040 Wien',
+            'Erdbergstraße 131, 1030 Wien',
+            'Litfaßstraße 13-7, 1030 Wien',
+            'Salzburg Hbf, Südtiroler Pl. 1, 5020 Salzburg',
+        ];
+       return $this->getDistance($client, 'Flughafen Wien', $valid);
+    }
 
+    public function getDistance(HttpClientInterface $client, string $origin, array $waypoints): JsonResponse
+    {
+        $params['origin'] = $origin;
+        $params['destination'] = $origin;
+        $params['mode'] = 'driving';
+        $params['waypoints'] = sprintf('optimize:true|%s', join('|', $waypoints));
+        $options = [];
 
-        $stmt = $conn->prepare("SELECT street, zip, city FROM merchant where id = 0x".$merchantId);
+        // Parameters for Auth
+        $defaultParams = ['key' => 'AIzaSyATrcd4R8s-dKkuZLRqc9aLUNnsQihxgC8'];
 
-        $result = $stmt->executeQuery();
-        $merchantAddress = $result->fetchAssociative();
-        return $this->json([
-            'address' => array_values($merchantAddress)
-        ])->setEncodingOptions(JSON_UNESCAPED_UNICODE);
+        // Query
+        $options['query'] = array_merge($defaultParams, $params);
+
+        $response = $client->request(
+            'GET',
+            'https://maps.googleapis.com/maps/api/directions/json',
+            $options
+        );
+
+        $json = json_decode($response->getContent(), true);
+        $distanceMeters = $json['routes'][0]['legs'][0]['distance']['value'];
+        $distanceKm = $distanceMeters / 1000;
+
+        // Error Handler
+        if (Response::HTTP_OK !== $response->getStatusCode()) {
+            return new JsonResponse(['error' => $response->getContent()], Response::HTTP_BAD_REQUEST);
+        }
+
+        return new JsonResponse(['overall_distance' => $distanceKm]);
     }
 }
