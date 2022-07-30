@@ -16,6 +16,11 @@ class Co2Controller extends AbstractController
     const API_URL = 'https://maps.googleapis.com/maps/api/directions/json';
     const CAR_CO2_EMISSION_PER_KM = 123;
     const CUSTOMER_PICKUP_FACTOR = 2;
+    const HUB_ADDRESS = [
+        'street' => 'Mühlgasse 93',
+        'zip' => '2380',
+        'city' => 'Perchtoldsdorf'
+    ];
 
     #[Route('/api/co2', name: 'app_co2')]
     public function index(Request $request): JsonResponse
@@ -62,7 +67,6 @@ class Co2Controller extends AbstractController
         $zip = $request->query->get('zip');
         $city = $request->query->get('city');
         $datePreference = $request->query->get('datePreference');
-        $HUB_ADDRESS = "Mühlgasse+93,2380,Perchtoldsdorf";
 
         $merchantAddress = $this->getMerchantAddress($conn, $request->query->get('merchantId'));
         $waypoints = [
@@ -72,10 +76,13 @@ class Co2Controller extends AbstractController
                 'city' => $city,
             ])
         ];
-        $distanceKm = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints);
+        $distanceKmPickup = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints);
+        $distanceKmDeliveryFromHub = $this->getDistance($client, $this->encodeAddressForGoogleMaps(self::HUB_ADDRESS), $waypoints);
 
         return $this->json([
-            'co2GramsPickup' => $distanceKm * self::CUSTOMER_PICKUP_FACTOR * self::CAR_CO2_EMISSION_PER_KM
+            'co2GramsPickup' => $distanceKmPickup * self::CUSTOMER_PICKUP_FACTOR * self::CAR_CO2_EMISSION_PER_KM,
+            'co2GramsDelivery' => $distanceKmDeliveryFromHub * self::CAR_CO2_EMISSION_PER_KM,
+            'co2GramsBundledDelivery' => 1,// todo: overall distance of the whole delivery route divided by count of stops times electric delivery car emission
         ]);
     }
 
@@ -90,7 +97,7 @@ class Co2Controller extends AbstractController
 
         $response = $client->request(
             'GET',
-            'https://maps.googleapis.com/maps/api/directions/json',
+            self::API_URL,
             $options
         );
 
