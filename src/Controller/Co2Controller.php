@@ -12,6 +12,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class Co2Controller extends AbstractController
 {
+    const CUSTOMER_ROUNDTRIP = 123*2;
+
     #[Route('/api/co2', name: 'app_co2')]
     public function index(Request $request): JsonResponse
     {
@@ -19,7 +21,7 @@ class Co2Controller extends AbstractController
         $zip = $request->query->get('zip');
         $city = $request->query->get('city');
         $merchantId = $request->query->get('merchantId');
-        $datePreference = $request->query->get('merchantId');
+        $datePreference = $request->query->get('datePreference');
 
         //dd($request->query);
         return $this->json([
@@ -59,6 +61,62 @@ class Co2Controller extends AbstractController
         return $this->json([
             'address' => array_values($merchantAddress)
         ])->setEncodingOptions(JSON_UNESCAPED_UNICODE);
+    }
+
+    #[Route('/api/customer/pickup', name: 'app_co2_customer_pickup')]
+    public function co2CustomerPickup(Request $request, Connection $conn, HttpClientInterface $client): JsonResponse
+    {
+        $street = $request->query->get('street');
+        $zip = $request->query->get('zip');
+        $city = $request->query->get('city');
+        $merchantId = $request->query->get('merchantId');
+        $datePreference = $request->query->get('datePreference');
+
+        $HUB_ADDRESS= "Mühlgasse+93,2380,Perchtoldsdorf";
+
+        $stmt = $conn->prepare("SELECT street, zip, city FROM merchant where id = 0x".$merchantId);
+
+        $result = $stmt->executeQuery();
+        $merchantAddress = $result->fetchAssociative();
+
+
+        $params['origin'] = $merchantAddress['street'] . ", " . $merchantAddress['zip'] . " " .  $merchantAddress['city'];
+        $params['destination'] = $merchantAddress['street'] . ", " . $merchantAddress['zip'] . " " .  $merchantAddress['city'];
+        $waypoints = [
+            $street . ", " . $zip . " " .  $city
+        ];
+
+        //dd($params['origin'] , $params['destination'] , $waypoints);
+        $params['mode'] = 'driving';
+        $params['waypoints'] = sprintf('optimize:true|%s', join('|', $waypoints));
+        $options = [];
+
+        // Parameters for Auth
+        $defaultParams = ['key' => $this->getParameter('api_key')];
+
+        // Query
+        $options['query'] = array_merge($defaultParams, $params);
+
+        $response = $client->request(
+            'GET',
+            'https://maps.googleapis.com/maps/api/directions/json',
+            $options
+        );
+
+        $json = json_decode($response->getContent(), true);
+        $distanceMeters = $json['routes'][0]['legs'][0]['distance']['value'];
+        $distanceKm = $distanceMeters / 1000;
+
+
+//        dd($distanceKm * 123 * 2);
+
+//        dd($request->query);
+        return $this->json([
+            'co2GramsPickup' => $distanceKm * self::CUSTOMER_ROUNDTRIP
+        ]);
+
+
+
     }
 
 
