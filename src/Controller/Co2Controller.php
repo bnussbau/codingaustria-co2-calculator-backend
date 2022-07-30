@@ -47,6 +47,22 @@ class Co2Controller extends AbstractController
         ]);
     }
 
+    #[Route('/api/merchant/address', name: 'app_co2_merchant_address')]
+    public function co2MerchantAddress(Request $request, Connection $conn): JsonResponse
+    {
+        $merchantId = $request->query->get('merchantId');
+
+
+        $stmt = $conn->prepare("SELECT street, zip, city FROM merchant where id = 0x".$merchantId);
+
+        $result = $stmt->executeQuery();
+        $merchantAddress = $result->fetchAssociative();
+        return $this->json([
+            'address' => array_values($merchantAddress)
+        ])->setEncodingOptions(JSON_UNESCAPED_UNICODE);
+    }
+
+
     #[Route('/api/test', name: 'test')]
     public function test(Request $request, HttpClientInterface $client): JsonResponse
     {
