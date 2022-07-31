@@ -145,7 +145,7 @@ class Co2Controller extends AbstractController
         $result = $stmt->executeQuery();
         $merchantAddress = $result->fetchAssociative();
 
-        if(!$merchantAddress) {
+        if (!$merchantAddress) {
             return [];
         }
 
@@ -157,9 +157,37 @@ class Co2Controller extends AbstractController
         return sprintf('%s, %s %s', $merchantAddress['street'], $merchantAddress['zip'], $merchantAddress['city']);
     }
 
+    private function getGthAddress(HttpClientInterface $client, $street, $zip, $number)
+    {
+        $options['headers'] = ['cookie' => $this->getParameter('gth_key')];
+        $options['query'] = ['z' => $zip, 's' => $street];
+        $response = $client->request(
+            'GET',
+            'https://www.greentohome.at/app/streetAutoComplete',
+            $options
+        );
+
+        $json = json_decode($response->getContent(), true);
+        $numbers = $json['items'][0]['numbers'];
+
+        $numberResult = array_filter($numbers, function ($k, $v) use ($number) {
+            return $k[1] == $number;
+        }, ARRAY_FILTER_USE_BOTH);
+
+        return current($numberResult)[0];
+
+    }
+
     #[Route('/api/greentohome/export', name: 'app_gth_export')]
     public function greentohomeExport(HttpClientInterface $client, Request $request, Connection $conn): JsonResponse
     {
+
+        $street = $request->query->get('street');
+        $zip = $request->query->get('zip');
+        $number = $request->query->get('number');
+
+        $gthAddressId = $this->getGthAddress($client, $street, $zip, $number);
+
         $body = '{
           "weight": 5,
           "length": 10,
@@ -170,8 +198,8 @@ class Co2Controller extends AbstractController
           "email": "test1@greentohome.at",
           "address": {
             "addressType": "knownAddress",
-            "zipCode": "2340",
-            "streetNumber": "6506717",
+            "zipCode": "' . $zip . '",
+            "streetNumber": "' . $gthAddressId . '",
             "streetName": "adf"
           },
           "addressComment": "12",
