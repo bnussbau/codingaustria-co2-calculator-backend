@@ -156,4 +156,53 @@ class Co2Controller extends AbstractController
     {
         return sprintf('%s, %s %s', $merchantAddress['street'], $merchantAddress['zip'], $merchantAddress['city']);
     }
+
+    #[Route('/api/greentohome/export', name: 'app_gth_export')]
+    public function greentohomeExport(HttpClientInterface $client, Request $request, Connection $conn): JsonResponse
+    {
+        $body = '{
+          "weight": 5,
+          "length": 10,
+          "width": 20,
+          "height": 30,
+          "name": "Test",
+          "phone": "+43664111111111",
+          "email": "test1@greentohome.at",
+          "address": {
+            "addressType": "knownAddress",
+            "zipCode": "2340",
+            "streetNumber": "6506717",
+            "streetName": "adf"
+          },
+          "addressComment": "12",
+          "comment": "",
+          "monday": true,
+          "tuesday": true,
+          "wednesday": true,
+          "thursday": true,
+          "friday": true,
+          "saturday": true,
+          "sunday": true,
+          "timeFrom": "09:00",
+          "timeTo": "17:00",
+          "fromAddressBook": "",
+          "addToAddressBook": false
+        }';
+
+        $options['headers'] = ['cookie' => $this->getParameter('gth_key')];
+        $options['body'] = $body;
+        $response = $client->request(
+            'POST',
+            'https://www.greentohome.at/app/GTH-CW436/senden',
+            $options
+        );
+
+        if (Response::HTTP_OK !== $response->getStatusCode()) {
+            throw new \Exception('Not possible to submit order');
+        }
+        return $this->json([
+            'message' => "order successfully transmitted"
+        ])->setEncodingOptions(JSON_UNESCAPED_UNICODE);
+    }
+
 }
