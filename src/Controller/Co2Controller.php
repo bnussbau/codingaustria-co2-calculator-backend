@@ -79,8 +79,9 @@ class Co2Controller extends AbstractController
                 'city' => $city,
             ])
         ];
-        $distanceKmPickup = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints);
-        $distanceKmDeliveryFromHub = $this->getDistance($client, $this->encodeAddressForGoogleMaps(self::HUB_ADDRESS), $waypoints);
+        $distanceKmPickupByFeet = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints, 'walking')['distance'];
+        $distanceKmPickup = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints)['distance'];
+        $distanceKmDeliveryFromHub = $this->getDistance($client, $this->encodeAddressForGoogleMaps(self::HUB_ADDRESS), $waypoints)['distance'];
 
         $emissions = [
             'co2GramsPickup' => $distanceKmPickup * self::CUSTOMER_PICKUP_FACTOR * self::CAR_CO2_EMISSION_PER_KM,
@@ -88,18 +89,19 @@ class Co2Controller extends AbstractController
             'co2GramsDeliveryUnbundled' => self::DELIVERY_UNBUNDLED_EMISSION_OVERALL,
             'co2GramsDeliveryBundled' => self::DELIVERY_BUNDLED_EMISSION_OVERALL
         ];
-        
-        if ($distanceKmPickup <= 2) {
-            $emissions['co2GramsPickupPerPedes'] = self::DELIVERY_PER_PEDES_EMISSION;
+
+        if ($distanceKmPickupByFeet <= 2) {
+            $emissions['co2GramsPickupPerPedesDistance'] = self::DELIVERY_PER_PEDES_EMISSION;
+            $emissions['co2GramsPickupPerPedesTime'] = self::DELIVERY_PER_PEDES_EMISSION;
 
         }
         return $this->json($emissions);
     }
 
-    private function getDistance(HttpClientInterface $client, string $origin, array $waypoints): float
+    private function getDistance(HttpClientInterface $client, string $origin, array $waypoints, string $mode = 'driving'): array
     {
         $params['origin'] = $params['destination'] = $origin;
-        $params['mode'] = 'driving';
+        $params['mode'] = $mode;
         $params['waypoints'] = sprintf('optimize:true|%s', join('|', $waypoints));
 
         $defaultParams = ['key' => $this->getParameter('api_key')];
@@ -111,15 +113,17 @@ class Co2Controller extends AbstractController
             $options
         );
 
-        $json = json_decode($response->getContent(), true);
-        $distanceMeters = $json['routes'][0]['legs'][0]['distance']['value'];
-        $distanceKm = $distanceMeters / 1000;
-
         if (Response::HTTP_OK !== $response->getStatusCode()) {
             throw new \Exception('Not possible to query directions api');
         }
 
-        return $distanceKm;
+        $json = json_decode($response->getContent(), true);
+        $distanceMeters = $json['routes'][0]['legs'][0]['distance']['value'];
+        $distanceKm = $distanceMeters / 1000;
+
+        $duration = $json['routes'][0]['legs'][0]['duration']['text'];
+
+        return ['distance' => $distanceKm, 'duration' => $duration];
     }
 
     private function getOrdersByMerchant(Connection $conn, string $merchantId): array
