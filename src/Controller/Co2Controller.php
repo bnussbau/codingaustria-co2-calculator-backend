@@ -71,7 +71,8 @@ class Co2Controller extends AbstractController
         $city = $request->query->get('city');
         $datePreference = $request->query->get('datePreference');
 
-        $merchantAddress = $this->getMerchantAddress($conn, $request->query->get('merchantId'));
+        $merchantId = $request->query->get('merchantId');
+        $merchantAddress = $this->getMerchantAddress($conn, $merchantId);
         $waypoints = [
             $this->encodeAddressForGoogleMaps([
                 'street' => $street,
@@ -80,6 +81,7 @@ class Co2Controller extends AbstractController
             ])
         ];
         $distanceKmPickupByFeet = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints, 'walking')['distance'];
+        $timeKmPickupByFeet = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints, 'walking')['duration'];
         $distanceKmPickup = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints)['distance'];
         $distanceKmDeliveryFromHub = $this->getDistance($client, $this->encodeAddressForGoogleMaps(self::HUB_ADDRESS), $waypoints)['distance'];
 
@@ -87,12 +89,13 @@ class Co2Controller extends AbstractController
             'co2GramsPickup' => $distanceKmPickup * self::CUSTOMER_PICKUP_FACTOR * self::CAR_CO2_EMISSION_PER_KM,
             'co2GramsDeliveryOptimized' => $distanceKmDeliveryFromHub * self::CAR_CO2_EMISSION_PER_KM,
             'co2GramsDeliveryUnbundled' => self::DELIVERY_UNBUNDLED_EMISSION_OVERALL,
-            'co2GramsDeliveryBundled' => self::DELIVERY_BUNDLED_EMISSION_OVERALL
+            'co2GramsDeliveryBundled' => self::DELIVERY_BUNDLED_EMISSION_OVERALL,
+            'co2GramsSavedMerchant' => array_values($this->getOrdersByMerchant($conn, $merchantId))[0] * 600
         ];
 
         if ($distanceKmPickupByFeet <= 2) {
             $emissions['co2GramsPickupPerPedesDistance'] = self::DELIVERY_PER_PEDES_EMISSION;
-            $emissions['co2GramsPickupPerPedesTime'] = self::DELIVERY_PER_PEDES_EMISSION;
+            $emissions['co2GramsPickupPerPedesTime'] = $timeKmPickupByFeet;
 
         }
         return $this->json($emissions);
