@@ -82,13 +82,18 @@ class Co2Controller extends AbstractController
         $distanceKmPickup = $this->getDistance($client, $this->encodeAddressForGoogleMaps($merchantAddress), $waypoints);
         $distanceKmDeliveryFromHub = $this->getDistance($client, $this->encodeAddressForGoogleMaps(self::HUB_ADDRESS), $waypoints);
 
-        return $this->json([
+        $emissions = [
             'co2GramsPickup' => $distanceKmPickup * self::CUSTOMER_PICKUP_FACTOR * self::CAR_CO2_EMISSION_PER_KM,
-            'co2GramsPickupPerPedes' => self::DELIVERY_PER_PEDES_EMISSION,
             'co2GramsDeliveryOptimized' => $distanceKmDeliveryFromHub * self::CAR_CO2_EMISSION_PER_KM,
             'co2GramsDeliveryUnbundled' => self::DELIVERY_UNBUNDLED_EMISSION_OVERALL,
             'co2GramsDeliveryBundled' => self::DELIVERY_BUNDLED_EMISSION_OVERALL
-        ]);
+        ];
+        
+        if ($distanceKmPickup <= 2) {
+            $emissions['co2GramsPickupPerPedes'] = self::DELIVERY_PER_PEDES_EMISSION;
+
+        }
+        return $this->json($emissions);
     }
 
     private function getDistance(HttpClientInterface $client, string $origin, array $waypoints): float
